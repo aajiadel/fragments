@@ -134,6 +134,26 @@ npm run dev
 npm run build
 ```
 
+## Code selection to chat context
+
+- Highlight a code range in the Code tab to attach it as chat context. By default, a context menu lets you choose Attach or Dismiss; enable auto-attach in settings if you prefer instant attachment.
+- The attached snippet shows above the chat input with a Clear action and line hints.
+- Sending a message includes the snippet in the payload as `{ context, contextMeta }` and keeps it attached until you clear it.
+
+### Demo locally
+
+1. Run `npm run dev` and open the app.
+2. Generate or open a fragment, then select a portion of code in the Code view.
+3. Confirm the “Attached context” panel appears above the chat input.
+4. Use the Clear button to remove the attached snippet when needed.
+5. Send a message and inspect the request payload in your browser devtools network panel; you will see `{ context, contextMeta }` included.
+
+### Known limitations
+
+- Maximum selection length is 12,000 characters; longer selections keep the previous snippet and show an inline warning.
+- Clearing tries to remove the browser selection highlight, but the exact behavior may vary by browser.
+- The server routes currently ignore the context fields; rely on the browser network request to verify inclusion.
+
 ## Customize
 
 ### Adding custom personas

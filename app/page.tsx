@@ -6,8 +6,12 @@ import { Chat } from '@/components/chat'
 import { ChatInput } from '@/components/chat-input'
 import { ChatPicker } from '@/components/chat-picker'
 import { ChatSettings } from '@/components/chat-settings'
+import { AttachedContextPanel } from '@/components/attached-context-panel'
 import { NavBar } from '@/components/navbar'
 import { Preview } from '@/components/preview'
+import { CodeSelection, CodeSelectionMeta } from '@/components/code-view'
+import { SelectionContextMenu } from '@/components/selection-context-menu'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { useAuth } from '@/lib/auth'
 import { Message, toAISDKMessages, toMessageImage } from '@/lib/messages'
 import { LLMModelConfig } from '@/lib/models'
@@ -23,6 +27,7 @@ import { SetStateAction, useEffect, useState } from 'react'
 import { useLocalStorage } from 'usehooks-ts'
 
 export default function Home() {
+  const MAX_SELECTION_LENGTH = 12000
   const [chatInput, setChatInput] = useLocalStorage('chat', '')
   const [files, setFiles] = useState<File[]>([])
   const [selectedTemplate, setSelectedTemplate] = useState<string>(
@@ -46,6 +51,22 @@ export default function Home() {
   const [authView, setAuthView] = useState<ViewType>('sign_in')
   const [isRateLimited, setIsRateLimited] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const [selectedCode, setSelectedCode] = useState<string | null>(null)
+  const [selectionMeta, setSelectionMeta] = useState<CodeSelectionMeta | null>(
+    null,
+  )
+  const [selectionError, setSelectionError] = useState<string | null>(null)
+  const [clearSelectionSignal, setClearSelectionSignal] = useState(0)
+  const [pendingSelection, setPendingSelection] = useState<CodeSelection | null>(
+    null,
+  )
+  const [selectionMenuPosition, setSelectionMenuPosition] = useState<
+    { left: number; top: number } | null
+  >(null)
+  const [autoAttachSelection, setAutoAttachSelection] = useLocalStorage(
+    'autoAttachSelection',
+    false,
+  )
   const { session, userTeam } = useAuth(setAuthDialog, setAuthView)
   const [useMorphApply, setUseMorphApply] = useLocalStorage(
     'useMorphApply',
@@ -156,6 +177,57 @@ export default function Home() {
     if (error) stop()
   }, [error])
 
+  const attachSelection = (selection: CodeSelection) => {
+    const trimmed = selection.code.trim()
+    if (!trimmed) return
+
+    if (trimmed.length > MAX_SELECTION_LENGTH) {
+      setSelectionError(
+        `Selection too large (max ${MAX_SELECTION_LENGTH.toLocaleString()} chars)`,
+      )
+      return
+    }
+
+    setSelectionError(null)
+    setSelectedCode(trimmed)
+    setSelectionMeta(selection.meta ?? null)
+    setPendingSelection(null)
+    setSelectionMenuPosition(null)
+  }
+
+  const handleCodeSelection = (selection: CodeSelection | null) => {
+    if (!selection || !selection.code.trim()) return
+
+    const normalized: CodeSelection = {
+      ...selection,
+      code: selection.code.trim(),
+    }
+
+    if (autoAttachSelection) {
+      attachSelection(normalized)
+      return
+    }
+
+    setSelectionError(null)
+    setPendingSelection(normalized)
+    if (normalized.rect) {
+      setSelectionMenuPosition({
+        left: normalized.rect.left,
+        top: normalized.rect.bottom + 8,
+      })
+    }
+  }
+
+  const clearAttachedContext = () => {
+    setSelectedCode(null)
+    setSelectionMeta(null)
+    setSelectionError(null)
+    setClearSelectionSignal((tick) => tick + 1)
+    setPendingSelection(null)
+    setSelectionMenuPosition(null)
+    clearBrowserSelection()
+  }
+
   function setMessage(message: Partial<Message>, index?: number) {
     setMessages((previousMessages) => {
       const updatedMessages = [...previousMessages]
@@ -166,6 +238,45 @@ export default function Home() {
 
       return updatedMessages
     })
+  }
+
+  function buildMessagesWithContext(base: Message[]) {
+    if (!selectedCode) return base
+
+    const linesText = selectionMeta?.startLine && selectionMeta?.endLine
+      ? ` (lines ${selectionMeta.startLine}-${selectionMeta.endLine})`
+      : ''
+
+    return [
+      ...base,
+      {
+        role: 'user' as const,
+        content: [
+          {
+            type: 'text' as const,
+            text: `Attached context${linesText}:\n${selectedCode}`,
+          },
+        ],
+      },
+    ]
+  }
+
+  const dismissPendingSelection = () => {
+    setPendingSelection(null)
+    setSelectionMenuPosition(null)
+    setClearSelectionSignal((tick) => tick + 1)
+    clearBrowserSelection()
+  }
+
+  function clearBrowserSelection() {
+    if (typeof window !== 'undefined') {
+      const selection = window.getSelection()
+      if (selection?.empty) {
+        selection.empty()
+      } else if (selection?.removeAllRanges) {
+        selection.removeAllRanges()
+      }
+    }
   }
 
   async function handleSubmitAuth(e: React.FormEvent<HTMLFormElement>) {
@@ -193,13 +304,17 @@ export default function Home() {
       content,
     })
 
+    const messagesWithContext = buildMessagesWithContext(updatedMessages)
+
     submit({
       userID: session?.user?.id,
       teamID: userTeam?.id,
-      messages: toAISDKMessages(updatedMessages),
+      messages: toAISDKMessages(messagesWithContext),
       template: currentTemplate,
       model: currentModel,
       config: languageModel,
+      context: selectedCode,
+      contextMeta: selectionMeta,
       ...(shouldUseMorph && fragment ? { currentFragment: fragment } : {}),
     })
 
@@ -214,13 +329,16 @@ export default function Home() {
   }
 
   function retry() {
+    const messagesWithContext = buildMessagesWithContext(messages)
     submit({
       userID: session?.user?.id,
       teamID: userTeam?.id,
-      messages: toAISDKMessages(messages),
+      messages: toAISDKMessages(messagesWithContext),
       template: currentTemplate,
       model: currentModel,
       config: languageModel,
+      context: selectedCode,
+      contextMeta: selectionMeta,
       ...(shouldUseMorph && fragment ? { currentFragment: fragment } : {}),
     })
   }
@@ -269,6 +387,7 @@ export default function Home() {
     setResult(undefined)
     setCurrentTab('code')
     setIsPreviewLoading(false)
+    clearAttachedContext()
   }
 
   function setCurrentPreview(preview: {
@@ -313,6 +432,32 @@ export default function Home() {
             isLoading={isLoading}
             setCurrentPreview={setCurrentPreview}
           />
+          {selectionError && (
+            <Alert variant="destructive" className="mx-4 mb-2">
+              <AlertTitle>Selection too large</AlertTitle>
+              <AlertDescription>{selectionError}</AlertDescription>
+            </Alert>
+          )}
+          {!autoAttachSelection && pendingSelection && (
+            <SelectionContextMenu
+              text={pendingSelection.code}
+              position={
+                selectionMenuPosition || {
+                  left: 24,
+                  top: 120,
+                }
+              }
+              onAttach={() => attachSelection(pendingSelection)}
+              onClear={dismissPendingSelection}
+            />
+          )}
+          {selectedCode && (
+            <AttachedContextPanel
+              code={selectedCode}
+              meta={selectionMeta}
+              onClear={clearAttachedContext}
+            />
+          )}
           <ChatInput
             retry={retry}
             isErrored={error !== undefined}
@@ -342,6 +487,8 @@ export default function Home() {
               baseURLConfigurable={!process.env.NEXT_PUBLIC_NO_BASE_URL_INPUT}
               useMorphApply={useMorphApply}
               onUseMorphApplyChange={setUseMorphApply}
+              autoAttachSelection={autoAttachSelection}
+              onAutoAttachSelectionChange={setAutoAttachSelection}
             />
           </ChatInput>
         </div>
@@ -355,6 +502,9 @@ export default function Home() {
           fragment={fragment}
           result={result as ExecutionResult}
           onClose={() => setFragment(undefined)}
+          onCodeSelection={handleCodeSelection}
+          clearSelectionSignal={clearSelectionSignal}
+          selectionInteractionMode={autoAttachSelection ? 'auto' : 'menu'}
         />
       </div>
     </main>

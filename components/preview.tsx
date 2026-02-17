@@ -1,6 +1,7 @@
 import { DeployDialog } from './deploy-dialog'
 import { FragmentCode } from './fragment-code'
 import { FragmentPreview } from './fragment-preview'
+import { CodeSelection } from '@/components/code-view'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -26,6 +27,9 @@ export function Preview({
   fragment,
   result,
   onClose,
+  onCodeSelection,
+  clearSelectionSignal,
+  selectionInteractionMode,
 }: {
   teamID: string | undefined
   accessToken: string | undefined
@@ -36,6 +40,9 @@ export function Preview({
   fragment?: DeepPartial<FragmentSchema>
   result?: ExecutionResult
   onClose: () => void
+  onCodeSelection?: (selection: CodeSelection | null) => void
+  clearSelectionSignal?: number
+  selectionInteractionMode?: 'auto' | 'menu'
 }) {
   if (!fragment) {
     return null
@@ -123,6 +130,9 @@ export function Preview({
                       content: fragment.code,
                     },
                   ]}
+                  onSelectionChange={onCodeSelection}
+                  clearSelectionSignal={clearSelectionSignal}
+                  interactionMode={selectionInteractionMode}
                 />
               )}
             </TabsContent>

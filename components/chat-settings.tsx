@@ -24,6 +24,8 @@ export function ChatSettings({
   onLanguageModelChange,
   useMorphApply,
   onUseMorphApplyChange,
+  autoAttachSelection,
+  onAutoAttachSelectionChange,
 }: {
   apiKeyConfigurable: boolean
   baseURLConfigurable: boolean
@@ -31,6 +33,8 @@ export function ChatSettings({
   onLanguageModelChange: (model: LLMModelConfig) => void
   useMorphApply: boolean
   onUseMorphApplyChange: (enabled: boolean) => void
+  autoAttachSelection: boolean
+  onAutoAttachSelectionChange: (enabled: boolean) => void
 }) {
   return (
     <DropdownMenu>
@@ -60,6 +64,16 @@ export function ChatSettings({
               id="morph-apply-toggle"
               checked={useMorphApply}
               onCheckedChange={onUseMorphApplyChange}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="auto-attach-toggle" className="text-sm font-medium">
+              Auto-attach selection
+            </Label>
+            <Switch
+              id="auto-attach-toggle"
+              checked={autoAttachSelection}
+              onCheckedChange={onAutoAttachSelectionChange}
             />
           </div>
           <a

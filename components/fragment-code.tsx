@@ -1,4 +1,4 @@
-import { CodeView } from './code-view'
+import { CodeSelection, CodeView } from './code-view'
 import { Button } from './ui/button'
 import { CopyButton } from './ui/copy-button'
 import {
@@ -12,8 +12,14 @@ import { useState } from 'react'
 
 export function FragmentCode({
   files,
+  onSelectionChange,
+  clearSelectionSignal,
+  interactionMode,
 }: {
   files: { name: string; content: string }[]
+  onSelectionChange?: (selection: CodeSelection | null) => void
+  clearSelectionSignal?: number
+  interactionMode?: 'auto' | 'menu'
 }) {
   const [currentFile, setCurrentFile] = useState(files[0].name)
   const currentFileContent = files.find(
@@ -85,6 +91,9 @@ export function FragmentCode({
         <CodeView
           code={currentFileContent || ''}
           lang={currentFile.split('.').pop() || ''}
+          onSelectionChange={onSelectionChange}
+          clearSelectionSignal={clearSelectionSignal}
+          interactionMode={interactionMode}
         />
       </div>
     </div>
